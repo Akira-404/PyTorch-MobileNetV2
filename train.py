@@ -16,10 +16,11 @@ def train():
         "train": transforms.Compose([transforms.RandomResizedCrop(224),
                                      transforms.RandomHorizontalFlip(),
                                      transforms.ToTensor(),
-                                     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]),
-        "val": transforms.Compose([transforms.Resize((224, 224)),
+                                     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]),
+        "val": transforms.Compose([transforms.Resize(256),
+                                   transforms.CenterCrop(224),
                                    transforms.ToTensor(),
-                                   transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])}
+                                   transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])}
 
     # 训练集数据地址
     image_path = "/home/lee/pyCode/dl_data/flower_photos"
@@ -46,7 +47,8 @@ def train():
     batch_size = 32
 
     # os.cpu_count()Python中的方法用于获取系统中的CPU数量
-    nw = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])  # number of workers
+    # number of workers
+    nw = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])
     print('Using {} dataloader workers every process'.format(nw))
 
     train_loader = DataLoader(train_dataset,
@@ -71,14 +73,17 @@ def train():
         # 5分类，使用辅助分类器，初始化权重
         net = MobileNetV2(num_classes=5)
 
-        #加载预训练权重
-        model_weight_path = './mobilenet_v2.pth'
+        # 加载预训练权重
+        model_weight_path = './mobilenet_v2-pre.pth'
         pre_weights = torch.load(model_weight_path)
 
-        #删除最后一层全链接层
-        pre_dict = {k: v for k, v in pre_weights.items() if 'classifier' not in k}
-        missing_keys, unexpected_keys = net.load_state_dict(pre_dict, strict=False)
+        # 删除最后一层全链接层权重
+        pre_dict = {k: v for k, v in pre_weights.items()
+                    if 'classifier' not in k}
+        missing_keys, unexpected_keys = net.load_state_dict(
+            pre_dict, strict=False)
 
+        # 冻结feature层所有参数，只训练最后一层
         for param in net.features.parameters():
             param.requires_grad = False
 
@@ -86,11 +91,9 @@ def train():
         loss_function = nn.CrossEntropyLoss()
         optimizer = optim.Adam(net.parameters(), lr=0.0003)
 
-        epochs = 30
+        epochs = 3
         best_acc = 0.0
         save_path = "./model_data.pth"
-        if os.path.exists(save_path):
-            os.mkdir(save_path)
 
         train_steps = len(train_loader)
 
@@ -103,12 +106,9 @@ def train():
                 images, labels = data
                 optimizer.zero_grad()
 
-                logits, aux_logits2, aux_logits1 = net(images.to(device))
+                logits = net(images.to(device))
 
-                loss0 = loss_function(logits, labels.to(device))
-                loss1 = loss_function(aux_logits1, labels.to(device))
-                loss2 = loss_function(aux_logits2, labels.to(device))
-                loss = loss0 + loss1 * 0.3 + loss2 * 0.3
+                loss = loss_function(logits, labels.to(device))
                 loss.backward()
 
                 optimizer.step()
@@ -129,9 +129,11 @@ def train():
 
                 for val_data in val_bar:
                     val_images, val_labels = val_data
-                    outputs = net(val_images.to(device))  # eval model only have last output layer
+                    # eval model only have last output layer
+                    outputs = net(val_images.to(device))
                     predict_y = torch.max(outputs, dim=1)[1]
-                    acc += torch.eq(predict_y, val_labels.to(device)).sum().item()
+                    acc += torch.eq(predict_y,
+                                    val_labels.to(device)).sum().item()
 
             val_accurate = acc / val_num
             print('[epoch %d] train_loss: %.3f  val_accuracy: %.3f' %
@@ -142,7 +144,7 @@ def train():
                 best_acc = val_accurate
                 torch.save(net.state_dict(), save_path)
 
-            print('训练完成')
+        print('训练完成')
 
 
 if __name__ == "__main__":
