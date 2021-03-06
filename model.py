@@ -16,9 +16,10 @@ def _make_divisible(ch, divisor=8, min_ch=None):
 
 
 class ConvBNReLU(nn.Sequential):
-    # groups=1:标准卷积，groups=in channel：dw卷积
+    # groups=1:标准卷积，groups=input channel：dw卷积
 
     def __init__(self, in_channel, out_channel, kernel_size=3, stride=1, groups=1):
+        # 根据kernel size计算padding 保证输入输出尺度不变
         padding = (kernel_size - 1) // 2
         super(ConvBNReLU, self).__init__(
             nn.Conv2d(in_channel, out_channel, kernel_size, stride, padding, groups=groups, bias=False),
@@ -52,7 +53,9 @@ class InvertedResidual(nn.Module):
             layers.append(ConvBNReLU(in_channel, hidden_channel, kernel_size=1))
 
         layers.extend([
+            #DWConv
             ConvBNReLU(hidden_channel, hidden_channel, stride=stride, groups=hidden_channel),
+
             nn.Conv2d(hidden_channel, out_channel, kernel_size=1, bias=False),
             nn.BatchNorm2d(out_channel)
         ])
